@@ -7,7 +7,7 @@ st.set_page_config(page_title="AI Resume Scanner", page_icon=":briefcase:", layo
 # Load model and vectorizer
 @st.cache_resource
 def load_model():
-    model = joblib.load('model.pkl')
+    model = joblib.load('resume_model.pkl')
     vectorizer = joblib.load('vectorizer.pkl')
     return model, vectorizer
 
@@ -43,7 +43,7 @@ if uploaded_file is not None:
 
         if st.button("📊 Analyze Resume"):
             vect_text = vectorizer.transform([text])
-            prediction = model.predict(vect_text)
+            prediction = resume_model.predict(vect_text)
             st.success(f"**✅ Predicted Job Category:** {prediction[0]}")
 
     except Exception as e:
