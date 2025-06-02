@@ -9,3 +9,4 @@ wordcloud
 python-docx
 fpdf
 openai
+nltk
