@@ -19,27 +19,33 @@ def load_model():
 model, vectorizer = load_model()
 
 st.markdown("""
-    <style>
-    body {
-        background-color: #0a1e3f;
-        color: white;
-    }
-    .stApp {
-        background-color: #0a1e3f;
-    }
-    .stButton>button {
-        background-color: #004080;
-        color: white;
-        font-weight: bold;
-        border-radius: 8px;
-        padding: 10px 20px;
-    }
-    .stButton>button:hover {
-        background-color: #002050;
-        color: #aad4ff;
-    }
-    </style>
+<style>
+body {
+    background-color: #000000 !important;  /* black background */
+    color: white !important;              /* white text */
+}
+.stApp {
+    background-color: #000000 !important; /* ensures full app background black */
+    color: white !important;
+}
+.stButton>button {
+    background-color: #004080; /* dark blue button */
+    color: white;
+    font-weight: bold;
+    border-radius: 8px;
+    padding: 10px 20px;
+}
+.stButton>button:hover {
+    background-color: #002050;
+    color: #aad4ff;
+}
+.css-1d391kg p {
+    font-size: 16px;
+    color: white !important;
+}
+</style>
 """, unsafe_allow_html=True)
+
 
 st.title("📝 AI Resume Scanner")
 
