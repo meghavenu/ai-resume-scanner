@@ -3,11 +3,14 @@ import joblib
 import docx2txt
 import matplotlib.pyplot as plt
 from wordcloud import WordCloud
+from fpdf import FPDF
 import base64
-import io
-from sklearn.feature_extraction.text import CountVectorizer
+import openai
 
-st.set_page_config(page_title="AI Resume Scanner", page_icon="🧠", layout="wide")
+# Set your OpenAI API key here or use environment variables
+openai.api_key = 'YOUR_OPENAI_API_KEY'
+
+st.set_page_config(page_title="AI Resume Scanner", page_icon=":briefcase:", layout="centered")
 
 @st.cache_resource
 def load_model():
@@ -17,117 +20,138 @@ def load_model():
 
 model, vectorizer = load_model()
 
-# Custom CSS
+# Custom CSS for full dark blue background and styling
 st.markdown("""
-    <style>
-        body {background-color: #001f3f; color: white;}
-        .stApp {background-color: #001f3f;}
-        h1, h2, h3, .stMarkdown, .stText, .stTitle {color: #ffffff !important;}
-        .stButton>button {
-            background-color: #004080; 
-            color: white; 
-            border-radius: 10px;
-            font-weight: bold;
-        }
-        .stButton>button:hover {
-            background-color: #002050;
-        }
-    </style>
+<style>
+body, .main, .block-container {
+    background-color: #0a1e3f !important;
+    color: white !important;
+}
+.stButton>button {
+    background-color: #004080;
+    color: white;
+    font-weight: bold;
+    border-radius: 8px;
+    padding: 10px 20px;
+    margin-top: 10px;
+}
+.stButton>button:hover {
+    background-color: #002050;
+    color: #aad4ff;
+}
+.css-1d391kg p {
+    font-size: 16px;
+}
+</style>
 """, unsafe_allow_html=True)
 
-st.title("🧠 AI Resume Scanner")
-st.markdown("An advanced resume analyzer that classifies your resume and gives detailed feedback on skills, job role, and improvements. Built using Machine Learning & Streamlit.")
+st.title("📝 AI Resume Scanner")
 
-uploaded_file = st.file_uploader("📤 Upload your Resume (.txt, .docx)", type=['txt', 'docx'])
+st.write("""
+Upload your resume (.txt, .doc, .docx) to get a detailed analysis including job category prediction, skill insights, word cloud, and personalized feedback.
+""")
 
-if 'history' not in st.session_state:
-    st.session_state.history = []
+uploaded_file = st.file_uploader("Choose your Resume file", type=['txt', 'doc', 'docx'])
 
-def generate_feedback(text, prediction):
-    feedback = f"Based on the resume, you're best suited for: **{prediction}** role.\n\n"
-    feedback += "🧠 **Skills Identified:**\n"
+def calculate_resume_score(text, skills):
+    base_score = min(len(text) / 1000, 1) * 50  # length score max 50
+    skill_score = min(len(skills) * 10, 50)     # skill score max 50
+    return round(base_score + skill_score)
 
-    keywords = ['python', 'machine learning', 'data analysis', 'communication', 'leadership', 'deep learning', 'project management']
-    found_skills = [kw for kw in keywords if kw in text.lower()]
-    
-    if found_skills:
-        feedback += ', '.join(found_skills)
-    else:
-        feedback += "Not enough specific skills found."
-
-    feedback += "\n\n🛠️ **Suggestions to Improve:**\n"
-    feedback += "- Include more quantifiable achievements\n"
-    feedback += "- Mention specific technologies/tools used\n"
-    feedback += "- Highlight your certifications or completed courses\n"
-    
-    return feedback, found_skills
-
-def plot_pie_chart(skills):
-    if not skills:
-        skills = ['Other']
-    data = {skill: 1 for skill in skills}
-    fig, ax = plt.subplots(figsize=(4,4))
-    ax.pie(data.values(), labels=data.keys(), autopct='%1.1f%%', colors=plt.cm.Blues(range(len(data))))
-    return fig
-
-def plot_wordcloud(text):
-    wordcloud = WordCloud(width=500, height=300, background_color='black', colormap='Blues').generate(text)
-    fig, ax = plt.subplots(figsize=(5,3))
-    ax.imshow(wordcloud, interpolation='bilinear')
-    ax.axis('off')
-    return fig
-
-def export_to_pdf(text, prediction, feedback):
-    from fpdf import FPDF
+def generate_pdf(report_text, pie_img, wordcloud_img, filename="Resume_Report.pdf"):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", size=12)
-    pdf.multi_cell(0, 10, f"Predicted Job Role: {prediction}\n\nResume Text:\n{text[:1000]}...\n\nFeedback:\n{feedback}")
-    return pdf.output(dest='S').encode('latin1')
-
-if uploaded_file is not None:
-    if uploaded_file.name.endswith('.txt'):
-        text = uploaded_file.read().decode('utf-8')
-    else:
-        text = docx2txt.process(uploaded_file)
-        
-    st.subheader("📄 Resume Preview")
-    st.text_area("", text, height=300)
+    pdf.multi_cell(0, 10, report_text)
     
-    if st.button("📊 Analyze Resume"):
-        vect_text = vectorizer.transform([text])
-        prediction = model.predict(vect_text)[0]
-        feedback, skills = generate_feedback(text, prediction)
-        
-        st.success(f"✅ **Predicted Category:** {prediction}")
-        st.markdown(f"### 📋 Feedback")
-        st.write(feedback)
+    pdf.image(pie_img, x=10, y=pdf.get_y()+10, w=90)
+    pdf.image(wordcloud_img, x=110, y=pdf.get_y()-60, w=90)
+    pdf.output(filename)
 
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("### 🧩 Skills Pie Chart")
-            pie_fig = plot_pie_chart(skills)
-            st.pyplot(pie_fig)
-        with col2:
-            st.markdown("### ☁️ Word Cloud")
-            wc_fig = plot_wordcloud(text)
-            st.pyplot(wc_fig)
+def get_base64(bin_file):
+    with open(bin_file, 'rb') as f:
+        data = f.read()
+    return base64.b64encode(data).decode()
 
-        st.session_state.history.append((prediction, feedback))
+def openai_chatbot(prompt):
+    response = openai.Completion.create(
+        engine="text-davinci-003",
+        prompt=prompt,
+        max_tokens=150,
+        temperature=0.7,
+    )
+    return response.choices[0].text.strip()
 
-        if st.button("📥 Download PDF Report"):
-            pdf_bytes = export_to_pdf(text, prediction, feedback)
-            b64 = base64.b64encode(pdf_bytes).decode()
-            href = f'<a href="data:application/pdf;base64,{b64}" download="resume_report.pdf">Download PDF</a>'
-            st.markdown(href, unsafe_allow_html=True)
+if uploaded_file:
+    try:
+        if uploaded_file.name.endswith('.txt'):
+            text = uploaded_file.read().decode('utf-8')
+        else:
+            text = docx2txt.process(uploaded_file)
+        st.subheader("📄 Resume Preview:")
+        st.text_area("", text, height=250)
 
-    if st.session_state.history:
-        st.markdown("### 🕘 Previous Analyses")
-        for i, (pred, fb) in enumerate(st.session_state.history[::-1][:3], 1):
-            st.markdown(f"**{i}.** {pred}")
-            st.markdown(f"_Summary:_ {fb[:150]}...")
-
-
-        
-
+        if st.button("📊 Analyze Resume"):
+            vect_text = vectorizer.transform([text])
+            prediction = model.predict(vect_text)[0]
             
+            # Simple skill extraction (fake example, replace with your logic)
+            common_skills = ['Python', 'Java', 'Machine Learning', 'Data Analysis', 'Communication']
+            skills_found = [skill for skill in common_skills if skill.lower() in text.lower()]
+
+            resume_score = calculate_resume_score(text, skills_found)
+
+            st.success(f"**✅ Predicted Job Category:** {prediction}")
+            st.write(f"**Resume Score:** {resume_score}/100")
+            st.progress(resume_score)
+
+            # Pie chart
+            labels = ['Skills Found', 'Skills Missing']
+            sizes = [len(skills_found), max(0, 5 - len(skills_found))]
+            colors = ['#1f77b4', '#d62728']
+            fig1, ax1 = plt.subplots(figsize=(4,4))
+            ax1.pie(sizes, labels=labels, autopct='%1.1f%%', colors=colors, startangle=140)
+            ax1.axis('equal')
+            st.pyplot(fig1)
+
+            # Word Cloud
+            wordcloud = WordCloud(width=400, height=200, background_color='navy', colormap='Pastel1').generate(text)
+            fig2, ax2 = plt.subplots(figsize=(6,3))
+            ax2.imshow(wordcloud, interpolation='bilinear')
+            ax2.axis('off')
+            st.pyplot(fig2)
+
+            # Feedback
+            st.subheader("📋 Feedback & Suggestions")
+            feedback = f"""
+            **Strengths:** Your resume contains important skills like {', '.join(skills_found) if skills_found else 'no recognizable skills yet, consider adding relevant ones.'}
+
+            **Areas for Improvement:** Consider expanding on your skills section, highlighting measurable achievements, and tailoring your resume to the target job role.
+
+            **Overall:** Your resume score of {resume_score} indicates {'good' if resume_score > 70 else 'room for improvement'}. Keep refining and updating your resume for best results.
+            """
+            st.markdown(feedback)
+
+            # PDF download option
+            pdf_report_text = f"Job Category Prediction: {prediction}\nResume Score: {resume_score}/100\nSkills Found: {', '.join(skills_found)}\n\nFeedback:\n{feedback}"
+            pdf_file_name = "Resume_Report.pdf"
+            # Save pie chart and wordcloud images temporarily
+            pie_img_path = "pie_chart.png"
+            wordcloud_img_path = "wordcloud.png"
+            fig1.savefig(pie_img_path)
+            fig2.savefig(wordcloud_img_path)
+            generate_pdf(pdf_report_text, pie_img_path, wordcloud_img_path, pdf_file_name)
+            with open(pdf_file_name, "rb") as pdf_file:
+                PDFbyte = pdf_file.read()
+            st.download_button(label="📥 Download PDF Report", data=PDFbyte, file_name=pdf_file_name, mime='application/pdf')
+
+            # Chatbot Assistant UI
+            st.subheader("🤖 Resume Improvement Assistant")
+            user_question = st.text_input("Ask a question about resume writing or improvement:")
+            if user_question:
+                with st.spinner("Getting advice..."):
+                    answer = openai_chatbot(user_question)
+                st.write(f"**Assistant:** {answer}")
+
+    except Exception as e:
+        st.error(f"Error processing file: {e}")
