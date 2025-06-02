@@ -4,11 +4,9 @@ import docx2txt
 import matplotlib.pyplot as plt
 from wordcloud import WordCloud
 import re
-import numpy as np
-import base64
-from io import BytesIO
+import os
 
-st.set_page_config(page_title="AI Resume Scanner", page_icon=":briefcase:", layout="wide")
+st.set_page_config(page_title="AI Resume Scanner", page_icon="🧠", layout="wide")
 
 @st.cache_resource
 def load_model():
@@ -18,102 +16,96 @@ def load_model():
 
 model, vectorizer = load_model()
 
+# 🌌 Dark mode theme with white text
 st.markdown("""
 <style>
-body {
-    background-color: #000000 !important;  /* black background */
-    color: white !important;              /* white text */
-}
-.stApp {
-    background-color: #000000 !important; /* ensures full app background black */
+html, body, [class*="css"] {
+    background-color: #000000 !important;
     color: white !important;
+    font-family: 'Segoe UI', sans-serif;
 }
+.stApp { background-color: #000000 !important; padding: 2rem; }
+h1, h2, h3, h4, h5, h6, p, div { color: white !important; }
 .stButton>button {
-    background-color: #004080; /* dark blue button */
-    color: white;
-    font-weight: bold;
+    background-color: #0066cc !important;
+    color: white !important;
     border-radius: 8px;
     padding: 10px 20px;
+    font-weight: bold;
 }
 .stButton>button:hover {
-    background-color: #002050;
-    color: #aad4ff;
+    background-color: #004c99 !important;
+    color: #aad4ff !important;
 }
-.css-1d391kg p {
-    font-size: 16px;
+.stTextInput>div>div>input,
+.stTextArea>div>textarea {
+    background-color: #1a1a1a !important;
     color: white !important;
+    border: 1px solid #004080;
 }
 </style>
 """, unsafe_allow_html=True)
 
+st.title("🧠 AI Resume Scanner")
+st.write("Upload your resume to get a professional analysis of your skills, suggestions for improvement, job category prediction, and visualizations.")
 
-st.title("📝 AI Resume Scanner")
+uploaded_file = st.file_uploader("📤 Upload your Resume (.txt, .doc, .docx)", type=['txt', 'doc', 'docx'])
 
-st.markdown("""
-This application uses machine learning to predict your resume's job category and provide insightful feedback.
-Upload your resume file (.txt, .doc, or .docx) and click **Analyze** to get started.
-""")
+def extract_text(uploaded_file):
+    if uploaded_file.name.endswith('.txt'):
+        return uploaded_file.read().decode('utf-8')
+    else:
+        return docx2txt.process(uploaded_file)
 
-uploaded_file = st.file_uploader("Choose your Resume file", type=['txt', 'doc', 'docx'])
+def extract_skills(text):
+    keywords = ['python', 'java', 'sql', 'machine learning', 'deep learning', 'communication', 'teamwork', 'data analysis', 'excel', 'tensorflow']
+    found = [kw for kw in keywords if kw in text.lower()]
+    return list(set(found))
+
+def score_resume(text):
+    length_score = min(len(text.split()) / 1000, 1) * 40
+    skill_count = len(extract_skills(text))
+    skill_score = min(skill_count / 10, 1) * 60
+    return int(length_score + skill_score)
+
+def generate_wordcloud(text):
+    return WordCloud(width=500, height=300, background_color='black', colormap='Pastel1').generate(text)
+
+def show_pie_chart(skills):
+    skill_freq = {skill: 1 for skill in skills}
+    fig, ax = plt.subplots()
+    ax.pie(skill_freq.values(), labels=skill_freq.keys(), autopct='%1.1f%%', textprops={'color': "white"})
+    st.pyplot(fig)
 
 if uploaded_file is not None:
-    try:
-        if uploaded_file.name.endswith('.txt'):
-            text = uploaded_file.read().decode('utf-8')
+    text = extract_text(uploaded_file)
+    st.subheader("📄 Resume Content Preview:")
+    st.text_area("Content", text, height=300)
+
+    if st.button("📊 Analyze Resume"):
+        st.subheader("🔍 Resume Analysis")
+        prediction = model.predict(vectorizer.transform([text]))[0]
+        score = score_resume(text)
+        skills = extract_skills(text)
+
+        st.markdown(f"<h3 style='color:#00ccff;'>💯 Resume Score: {score}/100</h3>", unsafe_allow_html=True)
+        st.success(f"📌 Predicted Job Category: **{prediction}**")
+
+        st.markdown("### ✅ Detected Skills:")
+        st.write(", ".join(skills) if skills else "No strong skills detected.")
+
+        st.markdown("### 💡 Suggestions to Improve Your Resume:")
+        if score < 60:
+            st.info("- Add more relevant skills.\n- Increase your experience section.\n- Use strong action words.\n- Structure your content better.")
+        elif score < 80:
+            st.info("- Great! You can still improve formatting and clarity.\n- Add certifications and projects.")
         else:
-            text = docx2txt.process(uploaded_file)
+            st.info("- Excellent resume! You're well-prepared.")
 
-        st.subheader("📄 Resume Preview:")
-        st.text_area("", text, height=250)
+        st.markdown("### ☁️ Word Cloud from Your Resume:")
+        wc = generate_wordcloud(text)
+        st.image(wc.to_array(), use_column_width=True)
 
-        if st.button("📊 Analyze Resume"):
-            vect_text = vectorizer.transform([text])
-            prediction = model.predict(vect_text)
-
-            st.markdown(f"<h3 style='color:#aad4ff;'>✅ Predicted Job Category: {prediction[0]}</h3>", unsafe_allow_html=True)
-
-            skills = re.findall(r'\b(?:Python|Java|SQL|Excel|Data Analysis|Machine Learning|Communication|Teamwork|Leadership)\b', text, re.IGNORECASE)
-            skills_count = {skill.title(): skills.count(skill) for skill in set(skills)}
-
-            st.markdown("<h4 style='color:#aad4ff;'>🧠 Detected Skills:</h4>", unsafe_allow_html=True)
-            if skills_count:
-                for skill, count in skills_count.items():
-                    st.markdown(f"- **{skill}** ({count} mentions)")
-            else:
-                st.write("No prominent technical skills detected.")
-
-            st.markdown("<h4 style='color:#aad4ff;'>💬 Feedback:</h4>", unsafe_allow_html=True)
-            st.markdown("""
-                - Your resume shows strengths in the listed skills.
-                - Consider emphasizing measurable achievements.
-                - Add keywords related to the job category for better matching.
-                - Keep formatting consistent and prioritize relevant experience.
-            """)
-
-            st.markdown("<h4 style='color:#aad4ff;'>📈 Resume Score:</h4>", unsafe_allow_html=True)
-            resume_score = min(100, len(skills) * 10)
-            st.markdown(f"<h2 style='color:lime;'>{resume_score} / 100</h2>", unsafe_allow_html=True)
-
-            st.markdown("---")
-            col1, col2 = st.columns(2)
-
-            with col1:
-                st.markdown("<h4 style='color:#aad4ff;'>☁️ Word Cloud:</h4>", unsafe_allow_html=True)
-                wordcloud = WordCloud(width=350, height=250, background_color='#0a1e3f', colormap='Blues').generate(text)
-                fig, ax = plt.subplots()
-                ax.imshow(wordcloud, interpolation='bilinear')
-                ax.axis('off')
-                st.pyplot(fig)
-
-            with col2:
-                st.markdown("<h4 style='color:#aad4ff;'>🥧 Skill Distribution:</h4>", unsafe_allow_html=True)
-                if skills_count:
-                    fig, ax = plt.subplots()
-                    ax.pie(skills_count.values(), labels=skills_count.keys(), autopct='%1.1f%%', startangle=140, colors=plt.cm.Blues(np.linspace(0.2, 0.8, len(skills_count))))
-                    ax.axis('equal')
-                    st.pyplot(fig)
-                else:
-                    st.write("No skill data available to display.")
-
-    except Exception as e:
-        st.error(f"Error processing file: {e}")
+        if skills:
+            st.markdown("### 🥧 Skill Distribution (Pie Chart):")
+            show_pie_chart(skills)
