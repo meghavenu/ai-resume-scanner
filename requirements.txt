@@ -3,6 +3,8 @@ scikit-learn
 pandas
 joblib
 docx2txt
+matplotlib
+seaborn
 
 
 
