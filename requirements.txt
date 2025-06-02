@@ -8,4 +8,4 @@ seaborn
 wordcloud
 python-docx
 fpdf
-
+openai
