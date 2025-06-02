@@ -5,6 +5,7 @@ joblib
 docx2txt
 matplotlib
 seaborn
-
+wordcloud
+python-docx
 
 
