@@ -1,10 +1,13 @@
 streamlit
 PyPDF2
+python-docx
 docx2txt
 matplotlib
 wordcloud
 spacy
 scikit-learn
+requests
+streamlit-lottie
 pandas
 numpy
 seaborn
