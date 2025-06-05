@@ -4,7 +4,6 @@ docx2txt
 matplotlib
 wordcloud
 spacy
-language_tool_python
 scikit-learn
 pandas
 numpy
