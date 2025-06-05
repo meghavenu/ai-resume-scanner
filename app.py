@@ -1,105 +1,162 @@
 import streamlit as st
-import pickle
+from io import BytesIO
+from collections import Counter
 import docx2txt
+import PyPDF2
+import re
 import matplotlib.pyplot as plt
-import pandas as pd
-from io import StringIO
-import numpy as np
+from wordcloud import WordCloud
+import tempfile
 
-st.set_page_config(layout="wide")
+SKILLS = [
+    'python', 'java', 'c++', 'sql', 'machine learning', 'deep learning', 'data analysis',
+    'communication', 'teamwork', 'leadership', 'project management', 'excel', 'powerpoint',
+    'cloud', 'aws', 'azure', 'docker', 'kubernetes', 'react', 'javascript', 'html', 'css',
+    'tensorflow', 'pandas', 'numpy', 'git', 'linux', 'problem solving'
+]
 
-# Load model and vectorizer
-model = pickle.load(open("resume_model.pkl", "rb"))
-vectorizer = pickle.load(open("vectorizer.pkl", "rb"))
+IMPORTANT_SKILLS = [
+    'python', 'machine learning', 'communication', 'project management', 'cloud', 'docker'
+]
 
-# Function to clean and prepare resume text
-def clean_text(text):
-    import nltk
-    from nltk.corpus import stopwords
-    nltk.download('stopwords')
-    stop_words = set(stopwords.words('english'))
-    words = text.lower().split()
-    words = [w for w in words if w not in stop_words]
-    return ' '.join(words)
+FEEDBACK = {
+    'python': "Great that you know Python, it's a highly sought-after skill.",
+    'machine learning': "Including machine learning skills can boost your profile for AI roles.",
+    'communication': "Strong communication skills are key for teamwork and leadership.",
+    'project management': "Mentioning project management experience adds leadership value.",
+    'cloud': "Cloud computing skills like AWS or Azure are highly valuable.",
+    'docker': "Knowledge of Docker and containerization improves DevOps fit.",
+}
 
-# Title and Description
-st.markdown("""
-    <h1 style='text-align: center; color: white;'>AI Resume Scanner</h1>
-    <p style='text-align: center; color: lightgrey;'>Upload your resume and receive professional insights, predictions, and improvement tips</p>
-    <hr style='border: 1px solid white;'>
-""", unsafe_allow_html=True)
-
-# Upload Resume
-st.markdown("""
-    <h3 style='color: red;'>📁 Drag and drop your resume file here (.txt or .docx):</h3>
-""", unsafe_allow_html=True)
-
-uploaded_file = st.file_uploader("", type=["txt", "docx"])
-
-if uploaded_file is not None:
-    if uploaded_file.name.endswith(".txt"):
-        resume_text = StringIO(uploaded_file.getvalue().decode("utf-8")).read()
+def extract_text(file):
+    if file.type == "application/pdf":
+        pdf_reader = PyPDF2.PdfReader(file)
+        text = ""
+        for page in pdf_reader.pages:
+            text += page.extract_text() or ""
+        return text
+    elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+        return docx2txt.process(file)
     else:
-        resume_text = docx2txt.process(uploaded_file)
+        return None
 
-    cleaned_resume = clean_text(resume_text)
-    vector_input = vectorizer.transform([cleaned_resume]).toarray()
-    prediction = model.predict(vector_input)[0]
+def extract_skills(text):
+    text_lower = text.lower()
+    found_skills = [skill for skill in SKILLS if skill in text_lower]
+    return found_skills
 
-    st.markdown("""
-        <h2 style='color: white;'>🧾 Resume Analysis</h2>
-        <div style='color: white;'>Your resume seems best suited for a <b>{}</b> role based on the content.</div>
-    """.format(prediction), unsafe_allow_html=True)
+def keyword_counts(text):
+    words = re.findall(r'\w+', text.lower())
+    counts = Counter(words)
+    common = counts.most_common(20)
+    return common
 
-    st.markdown("""
-        <h3 style='color: white;'>✅ Strengths</h3>
-        <ul style='color: lightgrey;'>
-            <li>Good use of relevant keywords</li>
-            <li>Balanced distribution of content</li>
-            <li>Content suitable for job category: <b>{}</b></li>
-        </ul>
-    """.format(prediction), unsafe_allow_html=True)
+def generate_wordcloud(text, dark_mode=False):
+    bg_color = 'black' if dark_mode else 'white'
+    wc = WordCloud(width=600, height=300, background_color=bg_color, colormap='Pastel1').generate(text)
+    return wc
 
-    st.markdown("""
-        <h3 style='color: white;'>📉 Areas of Improvement</h3>
-        <ul style='color: lightgrey;'>
-            <li>Add more measurable achievements</li>
-            <li>Use bullet points for clarity</li>
-            <li>Optimize the header with contact and LinkedIn details</li>
-        </ul>
-    """, unsafe_allow_html=True)
+def calculate_score(found_skills):
+    score = 0
+    for skill in IMPORTANT_SKILLS:
+        if skill in found_skills:
+            score += 1
+    return int((score / len(IMPORTANT_SKILLS)) * 100)
 
-    st.markdown("""
-        <h3 style='color: white;'>📊 Keyword Match Chart</h3>
-    """, unsafe_allow_html=True)
+def create_summary(text, found_skills, score):
+    summary = f"Resume Summary Report\n\n"
+    summary += f"Resume Score: {score}%\n\n"
+    summary += "Detected Skills:\n"
+    summary += ", ".join(found_skills) + "\n\n"
+    summary += "Feedback:\n"
+    for skill in found_skills:
+        if skill in FEEDBACK:
+            summary += f"- {skill.title()}: {FEEDBACK[skill]}\n"
+    missing = [s for s in IMPORTANT_SKILLS if s not in found_skills]
+    if missing:
+        summary += "\nConsider adding or highlighting these important skills:\n"
+        summary += ", ".join(missing) + "\n"
+    summary += "\n--- Extracted Resume Text Preview ---\n"
+    summary += text[:2000] + ("..." if len(text) > 2000 else "")
+    return summary
 
-    top_words = pd.Series(cleaned_resume.split()).value_counts().head(6)
-    fig, ax = plt.subplots(figsize=(4, 4))
-    ax.pie(top_words, labels=top_words.index, autopct='%1.1f%%', textprops={'color': 'black'})
-    plt.tight_layout()
-    st.pyplot(fig)
+st.set_page_config(page_title="Advanced Resume Scanner", layout="wide")
 
-    st.markdown("""
-        <h3 style='color: white;'>⭐ Resume Score</h3>
-        <div style='font-size: 28px; font-weight: bold; color: lime;'>{} / 100</div>
-    """.format(np.random.randint(65, 95)), unsafe_allow_html=True)
+dark_mode = st.sidebar.checkbox("Enable Dark Mode", False)
+
+if dark_mode:
+    # Inject some CSS for dark mode background & text
+    st.markdown(
+        """
+        <style>
+        .main {
+            background-color: #0e1117;
+            color: #d7dadc;
+        }
+        .css-1d391kg {
+            background-color: #0e1117;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
+st.title("Advanced Resume Scanner")
+
+uploaded_file = st.file_uploader("Upload your resume (PDF or DOCX)", type=["pdf", "docx"])
+
+if uploaded_file:
+    text = extract_text(uploaded_file)
+    if text:
+        col1, col2 = st.columns([3, 2])
+
+        with col1:
+            st.subheader("Extracted Resume Text (Preview)")
+            st.write(text[:3000] + "..." if len(text) > 3000 else text)
+
+            st.subheader("Keyword Frequency")
+            common_words = keyword_counts(text)
+            words = [w for w, c in common_words]
+            counts = [c for w, c in common_words]
+
+            fig, ax = plt.subplots(figsize=(7, 4))
+            ax.barh(words[::-1], counts[::-1], color='dodgerblue' if not dark_mode else '#1f77b4')
+            ax.set_xlabel("Frequency")
+            ax.set_title("Top 20 Keywords")
+            st.pyplot(fig)
+
+        with col2:
+            st.subheader("Detected Skills")
+            found_skills = extract_skills(text)
+            if found_skills:
+                st.write(", ".join(found_skills))
+            else:
+                st.write("No predefined skills found.")
+
+            st.subheader("Resume Score")
+            score = calculate_score(found_skills)
+            st.progress(score / 100)
+            st.write(f"Your resume score based on key skills is **{score}%**")
+
+            st.subheader("Feedback and Suggestions")
+            for skill in found_skills:
+                if skill in FEEDBACK:
+                    st.write(f"**{skill.title()}**: {FEEDBACK[skill]}")
+
+            missing_skills = [s for s in IMPORTANT_SKILLS if s not in found_skills]
+            if missing_skills:
+                st.warning(f"Consider adding or emphasizing these important skills: {', '.join(missing_skills)}")
+
+            st.subheader("Resume Word Cloud")
+            wc = generate_wordcloud(text, dark_mode)
+            fig_wc, ax_wc = plt.subplots(figsize=(6,3))
+            ax_wc.imshow(wc, interpolation='bilinear')
+            ax_wc.axis("off")
+            st.pyplot(fig_wc)
+
+            # Download summary report
+            summary_text = create_summary(text, found_skills, score)
+            st.download_button("Download Resume Summary Report", summary_text, file_name="resume_summary.txt")
+
+    else:
+        st.error("Unsupported file type. Please upload PDF or DOCX resumes only.")
 else:
-    st.markdown("""
-        <p style='color: white;'>Please upload a resume to begin analysis.</p>
-    """, unsafe_allow_html=True)
-
-# Apply custom background
-st.markdown(
-    """
-    <style>
-    body {
-        background-color: black;
-    }
-    .stApp {
-        background-color: black;
-        color: white;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+    st.info("Please upload a resume file to get started.")
