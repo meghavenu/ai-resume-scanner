@@ -223,4 +223,19 @@ if uploaded_files:
             sec = extract_sections(txt)
             skl = extract_skills(txt)
             role = model.predict(vectorizer.transform([txt]))[0]
-            score = match_score(txt, job_description
+            score = match_score(txt, job_description)
+            comparison_rows.append({
+                "Filename": file.name,
+                "Predicted Role": role,
+                "Skills Count": len(skl),
+                "Sections Covered": len(sec),
+                "JD Match Score (%)": score
+            })
+
+        df_comparison = pd.DataFrame(comparison_rows)
+        st.dataframe(df_comparison)
+
+# End
+st.markdown("---")
+st.success("✅ Analysis complete. Scroll up to review results and suggestions.")
+
