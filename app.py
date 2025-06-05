@@ -8,38 +8,46 @@ import spacy
 from sklearn.metrics.pairwise import cosine_similarity
 import pickle
 
-# Load your ML model and vectorizer
 model = pickle.load(open("resume_model.pkl", "rb"))
 vectorizer = pickle.load(open("vectorizer.pkl", "rb"))
-
-# Load spaCy model
 nlp = spacy.load("en_core_web_sm")
 
-# Streamlit page config and dark theme CSS
 st.set_page_config(page_title="AI Resume Scanner", layout="wide")
-st.markdown(
-    """
+
+st.markdown("""
     <style>
-        body {
-            background-color: #0b1a2d;
-            color: white;
-        }
-        .stTextInput>div>div>input {
-            background-color: #1e2c3a;
-            color: white;
-        }
-        .css-18e3th9 {
-            background-color: #0b1a2d;
-        }
+    body {
+        background-color: #0b1a2d;
+        color: white;
+    }
+    .stApp {
+        background-color: #0b1a2d;
+        color: white;
+        font-family: 'Segoe UI', sans-serif;
+    }
+    .css-1cpxqw2, .stTextInput > div > div > input, .stTextArea > div > textarea {
+        background-color: #1c2c44;
+        color: white;
+        border-radius: 0.5rem;
+    }
+    .stButton > button {
+        background-color: #0052cc;
+        color: white;
+        font-weight: bold;
+        border-radius: 0.5rem;
+    }
     </style>
-    """,
-    unsafe_allow_html=True,
-)
+""", unsafe_allow_html=True)
 
-st.title("🧠 AI-Powered Resume Scanner")
+st.sidebar.image("https://cdn-icons-png.flaticon.com/512/1077/1077012.png", width=80)
+st.sidebar.title("Resume Scanner")
+st.sidebar.markdown("Built with ❤️ using AI")
 
-resumes = st.file_uploader("Upload Resume(s)", type=["pdf", "docx"], accept_multiple_files=True)
-job_desc = st.text_area("Paste Job Description (Optional)")
+st.title("🧠 Smart Resume Scanner")
+st.markdown("Upload your resume to receive instant AI insights, predictions, and suggestions.")
+
+resumes = st.file_uploader("📤 Upload Resume(s)", type=["pdf", "docx"], accept_multiple_files=True)
+job_desc = st.text_area("📝 Paste Job Description (Optional)")
 
 def extract_text(file):
     text = ""
@@ -72,9 +80,10 @@ def resume_match_score(resume, jd):
 
 def generate_wordcloud(text):
     wc = WordCloud(width=800, height=300, background_color='black', colormap='Blues').generate(text)
-    plt.imshow(wc, interpolation='bilinear')
-    plt.axis("off")
-    st.pyplot(plt)
+    fig, ax = plt.subplots()
+    ax.imshow(wc, interpolation='bilinear')
+    ax.axis("off")
+    st.pyplot(fig)
 
 def smart_suggestions(category):
     suggestions = {
@@ -92,29 +101,31 @@ if resumes:
         cleaned = clean_resume(text)
         st.subheader(f"📄 {file.name}")
 
-        # Extract and display sections
-        sections = extract_sections(cleaned)
-        st.write("### Extracted Sections:")
-        for sec, content in sections.items():
-            st.write(f"**{sec}**: {content[:300]}...")
+        tab1, tab2, tab3 = st.tabs(["📘 Sections", "📊 Match & Prediction", "💡 Suggestions"])
 
-        # WordCloud visualization
-        st.write("### Skills WordCloud")
-        generate_wordcloud(cleaned)
+        with tab1:
+            st.markdown("### 📌 Extracted Sections")
+            sections = extract_sections(cleaned)
+            for sec, content in sections.items():
+                with st.expander(f"**{sec}**"):
+                    st.markdown(content[:1000] + "...")
 
-        # Resume matching score if job description given
-        if job_desc:
-            score = resume_match_score(cleaned, job_desc)
-            st.write(f"### Resume-Job Match Score: {score}%")
-        else:
-            score = None
+            st.markdown("### ☁️ Word Cloud of Resume")
+            generate_wordcloud(cleaned)
 
-        # ML-based category prediction
-        vector_input = vectorizer.transform([cleaned])
-        predicted_category = model.predict(vector_input)[0]
-        st.write(f"**Predicted Category (ML Model):** {predicted_category}")
+        with tab2:
+            if job_desc:
+                score = resume_match_score(cleaned, job_desc)
+                st.markdown(f"### 📈 Resume-Job Match Score: **{score}%**")
+                st.progress(int(score))
 
-        # Smart skill suggestions
-        st.write(f"**Suggested Skills to Improve:** {smart_suggestions(predicted_category)}")
+            vector_input = vectorizer.transform([cleaned])
+            predicted_category = model.predict(vector_input)[0]
+            st.markdown(f"### 🔍 Predicted Resume Category: **{predicted_category}**")
+
+        with tab3:
+            suggestion = smart_suggestions(predicted_category)
+            st.markdown(f"### 🧠 AI Suggestions for You:")
+            st.success(f"✅ Add or improve skills like: **{suggestion}**")
 else:
-    st.info("Please upload at least one resume to get started.")
+    st.info("Upload your resume to get started.")
