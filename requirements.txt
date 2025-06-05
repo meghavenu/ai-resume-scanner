@@ -7,6 +7,5 @@ matplotlib
 seaborn
 wordcloud
 python-docx
-fpdf
-openai
-nltk
+PyPDF2
+
