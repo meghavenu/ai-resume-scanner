@@ -1,65 +1,142 @@
-AI Resume Scanner - Enhanced Version
+import streamlit as st
+import PyPDF2
+import docx2txt
+import matplotlib.pyplot as plt
+from wordcloud import WordCloud
+import re
+import spacy
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.feature_extraction.text import TfidfVectorizer
+import pickle
 
-import streamlit as st import PyPDF2 import docx2txt import matplotlib.pyplot as plt from wordcloud import WordCloud import re import spacy import pickle import numpy as np from sklearn.metrics.pairwise import cosine_similarity from sklearn.feature_extraction.text import TfidfVectorizer
+# Load ML model and vectorizer
+model = pickle.load(open("resume_model.pkl", "rb"))
+vectorizer = pickle.load(open("vectorizer.pkl", "rb"))
 
-model = pickle.load(open("resume_model.pkl", "rb")) vectorizer = pickle.load(open("vectorizer.pkl", "rb")) nlp = spacy.load("en_core_web_sm")
+nlp = spacy.load("en_core_web_sm")
 
-st.set_page_config(page_title="AI Resume Scanner Pro", layout="wide") st.title("📄 AI Resume Scanner Pro")
+st.set_page_config(page_title="AI Resume Scanner", layout="wide")
+st.markdown(
+    """
+    <style>
+        body { background-color: #0b1a2d; color: white; }
+        .stTextInput>div>div>input { background-color: #1e2c3a; color: white; }
+        .css-18e3th9 { background-color: #0b1a2d; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
-resumes = st.file_uploader("Upload Resume(s)", type=["pdf", "docx"], accept_multiple_files=True) job_desc = st.text_area("Paste Job Description (Optional)")
+st.title("🧠 AI Resume Scanner")
 
-def extract_text(file): text = "" if file.type == "application/pdf": reader = PyPDF2.PdfReader(file) for page in reader.pages: text += page.extract_text() elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document": text = docx2txt.process(file) return text
+resumes = st.file_uploader("Upload Resume(s)", type=["pdf", "docx"], accept_multiple_files=True)
+job_desc = st.text_area("Paste Job Description (Optional)")
 
-def clean_resume(text): return re.sub(r'[^A-Za-z0-9., ]+', ' ', text)
+def extract_text(file):
+    text = ""
+    if file.type == "application/pdf":
+        reader = PyPDF2.PdfReader(file)
+        for page in reader.pages:
+            page_text = page.extract_text()
+            if page_text:
+                text += page_text
+    elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+        text = docx2txt.process(file)
+    return text
 
-def extract_sections(text): sections = {} headers = ["Education", "Experience", "Projects", "Skills", "Certifications", "Achievements"] for header in headers: pattern = re.compile(header + r'[:\n][\s\S]{0,500}', re.IGNORECASE) match = pattern.search(text) if match: sections[header] = match.group() return sections
+def clean_text(text):
+    return re.sub(r'[^A-Za-z0-9., ]+', ' ', text)
 
-def resume_match_score(resume, jd): vect = TfidfVectorizer() tfidf = vect.fit_transform([resume, jd]) return round(cosine_similarity(tfidf[0:1], tfidf[1:2])[0][0] * 100, 2)
+def extract_sections(text):
+    headers = ["Education", "Experience", "Projects", "Skills", "Certifications", "Achievements"]
+    sections = {h: None for h in headers}
+    for header in headers:
+        pattern = re.compile(header + r'[:\n][\s\S]{0,500}', re.IGNORECASE)
+        match = pattern.search(text)
+        if match:
+            sections[header] = match.group()
+    return sections
 
-def generate_wordcloud(text): wc = WordCloud(width=800, height=300, background_color='black', colormap='Blues').generate(text) plt.imshow(wc, interpolation='bilinear') plt.axis("off") st.pyplot(plt)
+def generate_wordcloud(text):
+    wc = WordCloud(width=800, height=300, background_color='black', colormap='Blues').generate(text)
+    plt.imshow(wc, interpolation='bilinear')
+    plt.axis("off")
+    st.pyplot(plt)
 
-def smart_suggestions(category): suggestions = { "Data Scientist": "NumPy, Pandas, Deep Learning, Statistics", "Software Engineer": "Git, REST APIs, Docker, System Design", "DevOps": "Jenkins, CI/CD, Docker, Monitoring", "Product Manager": "Agile, Roadmapping, User Stories, KPIs", "AI Engineer": "TensorFlow, PyTorch, NLP, Computer Vision" } return suggestions.get(category, "Consider enhancing your skills based on your job interest.")
+def resume_match_score(resume, jd):
+    vect = TfidfVectorizer()
+    tfidf = vect.fit_transform([resume, jd])
+    return round(cosine_similarity(tfidf[0:1], tfidf[1:2])[0][0] * 100, 2)
 
-def detect_strengths(text): strengths = [] if "led" in text or "managed" in text: strengths.append("Leadership") if "python" in text or "sql" in text: strengths.append("Technical Skills") if "team" in text or "collaborated" in text: strengths.append("Teamwork") return strengths
+def smart_suggestions(category):
+    suggestions = {
+        "Data Scientist": "Add NumPy, Pandas, Deep Learning projects.",
+        "Software Engineer": "Include Git, REST APIs, and full-stack apps.",
+        "DevOps": "Mention CI/CD, Jenkins, and cloud deployments.",
+        "Product Manager": "Describe Agile experience, user stories.",
+        "AI Engineer": "Include TensorFlow, NLP projects, or chatbot."
+    }
+    return suggestions.get(category, "Consider adding more technical and soft skills.")
 
-def improvement_suggestions(text): suggestions = [] if len(text.split()) < 150: suggestions.append("Resume is too short. Add more content.") if "project" not in text.lower(): suggestions.append("Add a Projects section to highlight practical work.") if len(set(re.findall(r'\b(\w+)\b', text.lower()))) < 100: suggestions.append("Consider adding more vocabulary diversity.") return suggestions
+def detect_strengths(text):
+    strengths = []
+    keywords = {
+        "team": "Teamwork",
+        "lead": "Leadership",
+        "project": "Project Management",
+        "solve": "Problem Solving",
+        "design": "Creativity"
+    }
+    for word, trait in keywords.items():
+        if word in text.lower():
+            strengths.append(trait)
+    return list(set(strengths))
 
-def section_completion_score(sections): all_sections = ["Education", "Experience", "Projects", "Skills", "Certifications", "Achievements"] return int((len(sections) / len(all_sections)) * 100)
+def resume_score(sections, skills_count, match_score):
+    section_score = sum([1 for v in sections.values() if v]) / len(sections) * 40
+    skill_score = min(skills_count, 10) * 3
+    match_score = match_score * 0.3
+    total = round(section_score + skill_score + match_score, 2)
+    return min(total, 100)
 
-if resumes: for file in resumes: text = extract_text(file) cleaned = clean_resume(text) st.subheader(f"📄 {file.name}")
+def extract_skills(text):
+    keywords = ['python', 'java', 'c++', 'machine learning', 'deep learning', 'sql', 'excel', 
+                'communication', 'teamwork', 'problem solving', 'nlp', 'tensorflow', 'keras',
+                'pandas', 'numpy', 'scikit-learn', 'html', 'css', 'javascript', 'react', 'django']
+    return [kw for kw in keywords if kw in text.lower()]
 
-sections = extract_sections(cleaned)
-    st.write("### 📚 Extracted Sections:")
-    for sec, content in sections.items():
-        st.write(f"**{sec}**: {content[:300]}...")
+if resumes:
+    for file in resumes:
+        st.subheader(f"📄 {file.name}")
+        raw = extract_text(file)
+        cleaned = clean_text(raw)
+        sections = extract_sections(cleaned)
+        skills = extract_skills(cleaned)
+        strengths = detect_strengths(cleaned)
+        job_score = resume_match_score(cleaned, job_desc) if job_desc else 0
+        vector_input = vectorizer.transform([cleaned])
+        category = model.predict(vector_input)[0]
+        total_score = resume_score(sections, len(skills), job_score)
 
-    st.write("### 🌐 WordCloud")
-    generate_wordcloud(cleaned)
+        st.write("### Resume Summary")
+        st.write(f"**Predicted Role:** {category}")
+        st.write(f"**Match Score with Job Description:** {job_score}%")
+        st.write(f"**Overall Resume Score:** {total_score}/100")
 
-    if job_desc:
-        score = resume_match_score(cleaned, job_desc)
-        st.write(f"### 🔗 Resume-Job Match Score: **{score}%**")
+        st.write("### Strengths Identified")
+        st.write(", ".join(strengths) if strengths else "No major strengths identified.")
 
-    vector_input = vectorizer.transform([cleaned])
-    predicted_category = model.predict(vector_input)[0]
-    st.write(f"### 🔍 Predicted Job Category: **{predicted_category}**")
+        st.write("### Smart Suggestions")
+        st.write(smart_suggestions(category))
 
-    strengths = detect_strengths(cleaned)
-    st.write(f"### 💪 Detected Strengths: {', '.join(strengths) if strengths else 'No strong traits found.'}")
+        st.write("### Extracted Skills")
+        st.write(", ".join(skills) if skills else "No specific skills detected.")
 
-    improve = improvement_suggestions(cleaned)
-    st.write("### 🔧 Suggestions to Improve Resume:")
-    for s in improve:
-        st.write("- " + s)
+        st.write("### Resume Section Check")
+        for sec, content in sections.items():
+            st.write(f"✅ {sec}" if content else f"❌ {sec}")
 
-    st.write(f"### 🧭 Smart Skill Suggestions: {smart_suggestions(predicted_category)}")
-
-    section_score = section_completion_score(sections)
-    st.write(f"### 🧩 Section Completion Score: **{section_score}%**")
-
-    overall_score = (score if job_desc else 70) * 0.4 + section_score * 0.3 + len(strengths) * 10
-    overall_score = min(round(overall_score), 100)
-    st.write(f"### 🏅 Overall Resume Score: **{overall_score}/100**")
-
-else: st.info("Upload a resume to begin analysis.")
-
+        st.write("### Resume Word Cloud")
+        generate_wordcloud(cleaned)
+else:
+    st.info("Upload at least one resume to get started.")
