@@ -1,107 +1,120 @@
 import streamlit as st
-import pickle
-import spacy
-import re
-from wordcloud import WordCloud
+import PyPDF2
+import docx2txt
 import matplotlib.pyplot as plt
-import pandas as pd
-import numpy as np
-from sklearn.preprocessing import LabelEncoder
+from wordcloud import WordCloud
+import re
+import spacy
+from sklearn.metrics.pairwise import cosine_similarity
+import pickle
 
-st.set_page_config(page_title="AI Resume Scanner", layout="wide")
-
-# Load ML models and vectorizer
+# Load your ML model and vectorizer
 model = pickle.load(open("resume_model.pkl", "rb"))
 vectorizer = pickle.load(open("vectorizer.pkl", "rb"))
 
-# Load spaCy model for NLP
+# Load spaCy model
 nlp = spacy.load("en_core_web_sm")
 
-# Dark mode CSS
+# Streamlit page config and dark theme CSS
+st.set_page_config(page_title="AI Resume Scanner", layout="wide")
 st.markdown(
     """
     <style>
-    .main {
-        background-color: #0e1117;
-        color: white;
-    }
-    .css-1d391kg {
-        background-color: #0e1117;
-        color: white;
-    }
-    .st-bb {
-        color: white;
-    }
+        body {
+            background-color: #0b1a2d;
+            color: white;
+        }
+        .stTextInput>div>div>input {
+            background-color: #1e2c3a;
+            color: white;
+        }
+        .css-18e3th9 {
+            background-color: #0b1a2d;
+        }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-st.title("AI Resume Scanner")
+st.title("🧠 AI-Powered Resume Scanner")
 
-uploaded_file = st.file_uploader("Upload your resume (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"])
+resumes = st.file_uploader("Upload Resume(s)", type=["pdf", "docx"], accept_multiple_files=True)
+job_desc = st.text_area("Paste Job Description (Optional)")
 
-def extract_text_from_file(file):
+def extract_text(file):
+    text = ""
     if file.type == "application/pdf":
-        import PyPDF2
-        pdf_reader = PyPDF2.PdfReader(file)
-        text = ""
-        for page in pdf_reader.pages:
-            text += page.extract_text() + "\n"
-        return text
+        reader = PyPDF2.PdfReader(file)
+        for page in reader.pages:
+            text += page.extract_text()
     elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-        import docx2txt
         text = docx2txt.process(file)
-        return text
-    else:
-        return file.read().decode("utf-8")
-
-def preprocess_text(text):
-    text = text.lower()
-    text = re.sub(r'\s+', ' ', text)
     return text
 
-def predict_category(text):
-    vect_text = vectorizer.transform([text]).toarray()
-    pred = model.predict(vect_text)[0]
-    return pred
+def clean_resume(text):
+    return re.sub(r'[^A-Za-z0-9., ]+', ' ', text)
 
-def extract_skills(text):
-    skills = []
-    skillset = ['python', 'java', 'c++', 'machine learning', 'deep learning', 'sql', 'excel', 
-                'communication', 'teamwork', 'problem solving', 'nlp', 'tensorflow', 'keras',
-                'pandas', 'numpy', 'scikit-learn', 'html', 'css', 'javascript', 'react', 'django']
-    for skill in skillset:
-        if skill in text:
-            skills.append(skill)
-    return skills
+def extract_sections(text):
+    sections = {}
+    headers = ["Education", "Experience", "Projects", "Skills", "Certifications", "Achievements"]
+    for header in headers:
+        pattern = re.compile(header + r'[:\n][\s\S]{0,500}', re.IGNORECASE)
+        match = pattern.search(text)
+        if match:
+            sections[header] = match.group()
+    return sections
+
+def resume_match_score(resume, jd):
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    vect = TfidfVectorizer()
+    tfidf = vect.fit_transform([resume, jd])
+    return round(cosine_similarity(tfidf[0:1], tfidf[1:2])[0][0] * 100, 2)
 
 def generate_wordcloud(text):
-    wordcloud = WordCloud(width=800, height=400, background_color='black').generate(text)
-    plt.figure(figsize=(10,5))
-    plt.imshow(wordcloud, interpolation='bilinear')
-    plt.axis('off')
+    wc = WordCloud(width=800, height=300, background_color='black', colormap='Blues').generate(text)
+    plt.imshow(wc, interpolation='bilinear')
+    plt.axis("off")
     st.pyplot(plt)
 
-if uploaded_file is not None:
-    raw_text = extract_text_from_file(uploaded_file)
-    clean_text = preprocess_text(raw_text)
-    
-    st.subheader("Extracted Resume Text")
-    st.write(clean_text)
-    
-    st.subheader("Predicted Job Category")
-    category = predict_category(clean_text)
-    st.success(category)
-    
-    st.subheader("Extracted Skills")
-    skills = extract_skills(clean_text)
-    if skills:
-        st.write(", ".join(skills))
-    else:
-        st.write("No skills found.")
-    
-    st.subheader("Word Cloud of Resume")
-    generate_wordcloud(clean_text)
+def smart_suggestions(category):
+    suggestions = {
+        "Data Scientist": "NumPy, Pandas, Deep Learning",
+        "Software Engineer": "Git, REST APIs, Docker",
+        "DevOps": "Jenkins, CI/CD, Docker",
+        "Product Manager": "Agile, Roadmapping, User Stories",
+        "AI Engineer": "TensorFlow, PyTorch, NLP"
+    }
+    return suggestions.get(category, "Keep enhancing your skills!")
+
+if resumes:
+    for file in resumes:
+        text = extract_text(file)
+        cleaned = clean_resume(text)
+        st.subheader(f"📄 {file.name}")
+
+        # Extract and display sections
+        sections = extract_sections(cleaned)
+        st.write("### Extracted Sections:")
+        for sec, content in sections.items():
+            st.write(f"**{sec}**: {content[:300]}...")
+
+        # WordCloud visualization
+        st.write("### Skills WordCloud")
+        generate_wordcloud(cleaned)
+
+        # Resume matching score if job description given
+        if job_desc:
+            score = resume_match_score(cleaned, job_desc)
+            st.write(f"### Resume-Job Match Score: {score}%")
+        else:
+            score = None
+
+        # ML-based category prediction
+        vector_input = vectorizer.transform([cleaned])
+        predicted_category = model.predict(vector_input)[0]
+        st.write(f"**Predicted Category (ML Model):** {predicted_category}")
+
+        # Smart skill suggestions
+        st.write(f"**Suggested Skills to Improve:** {smart_suggestions(predicted_category)}")
 else:
-    st.info("Please upload a resume file to get started.")
+    st.info("Please upload at least one resume to get started.")
