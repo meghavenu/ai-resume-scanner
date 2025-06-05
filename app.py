@@ -1,162 +1,128 @@
 import streamlit as st
-from io import BytesIO
-from collections import Counter
-import docx2txt
 import PyPDF2
-import re
+import docx2txt
 import matplotlib.pyplot as plt
 from wordcloud import WordCloud
-import tempfile
+import re
+import spacy
+from sklearn.metrics.pairwise import cosine_similarity
+import language_tool_python
+import pickle
 
-SKILLS = [
-    'python', 'java', 'c++', 'sql', 'machine learning', 'deep learning', 'data analysis',
-    'communication', 'teamwork', 'leadership', 'project management', 'excel', 'powerpoint',
-    'cloud', 'aws', 'azure', 'docker', 'kubernetes', 'react', 'javascript', 'html', 'css',
-    'tensorflow', 'pandas', 'numpy', 'git', 'linux', 'problem solving'
-]
+# Load your ML model and vectorizer
+model = pickle.load(open("resume_model.pkl", "rb"))
+vectorizer = pickle.load(open("vectorizer.pkl", "rb"))
 
-IMPORTANT_SKILLS = [
-    'python', 'machine learning', 'communication', 'project management', 'cloud', 'docker'
-]
+# Load spaCy model
+nlp = spacy.load("en_core_web_sm")
 
-FEEDBACK = {
-    'python': "Great that you know Python, it's a highly sought-after skill.",
-    'machine learning': "Including machine learning skills can boost your profile for AI roles.",
-    'communication': "Strong communication skills are key for teamwork and leadership.",
-    'project management': "Mentioning project management experience adds leadership value.",
-    'cloud': "Cloud computing skills like AWS or Azure are highly valuable.",
-    'docker': "Knowledge of Docker and containerization improves DevOps fit.",
-}
+# Streamlit page config and dark theme CSS
+st.set_page_config(page_title="AI Resume Scanner", layout="wide")
+st.markdown(
+    """
+    <style>
+        body {
+            background-color: #0b1a2d;
+            color: white;
+        }
+        .stTextInput>div>div>input {
+            background-color: #1e2c3a;
+            color: white;
+        }
+        .css-18e3th9 {
+            background-color: #0b1a2d;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.title("🧠 AI-Powered Resume Scanner")
+
+resumes = st.file_uploader("Upload Resume(s)", type=["pdf", "docx"], accept_multiple_files=True)
+job_desc = st.text_area("Paste Job Description (Optional)")
 
 def extract_text(file):
+    text = ""
     if file.type == "application/pdf":
-        pdf_reader = PyPDF2.PdfReader(file)
-        text = ""
-        for page in pdf_reader.pages:
-            text += page.extract_text() or ""
-        return text
+        reader = PyPDF2.PdfReader(file)
+        for page in reader.pages:
+            text += page.extract_text()
     elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-        return docx2txt.process(file)
-    else:
-        return None
+        text = docx2txt.process(file)
+    return text
 
-def extract_skills(text):
-    text_lower = text.lower()
-    found_skills = [skill for skill in SKILLS if skill in text_lower]
-    return found_skills
+def clean_resume(text):
+    return re.sub(r'[^A-Za-z0-9., ]+', ' ', text)
 
-def keyword_counts(text):
-    words = re.findall(r'\w+', text.lower())
-    counts = Counter(words)
-    common = counts.most_common(20)
-    return common
+def extract_sections(text):
+    sections = {}
+    headers = ["Education", "Experience", "Projects", "Skills", "Certifications", "Achievements"]
+    for header in headers:
+        pattern = re.compile(header + r'[:\n][\s\S]{0,500}', re.IGNORECASE)
+        match = pattern.search(text)
+        if match:
+            sections[header] = match.group()
+    return sections
 
-def generate_wordcloud(text, dark_mode=False):
-    bg_color = 'black' if dark_mode else 'white'
-    wc = WordCloud(width=600, height=300, background_color=bg_color, colormap='Pastel1').generate(text)
-    return wc
+def analyze_grammar(text):
+    tool = language_tool_python.LanguageTool('en-US')
+    matches = tool.check(text)
+    return len(matches), matches
 
-def calculate_score(found_skills):
-    score = 0
-    for skill in IMPORTANT_SKILLS:
-        if skill in found_skills:
-            score += 1
-    return int((score / len(IMPORTANT_SKILLS)) * 100)
+def resume_match_score(resume, jd):
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    vect = TfidfVectorizer()
+    tfidf = vect.fit_transform([resume, jd])
+    return round(cosine_similarity(tfidf[0:1], tfidf[1:2])[0][0] * 100, 2)
 
-def create_summary(text, found_skills, score):
-    summary = f"Resume Summary Report\n\n"
-    summary += f"Resume Score: {score}%\n\n"
-    summary += "Detected Skills:\n"
-    summary += ", ".join(found_skills) + "\n\n"
-    summary += "Feedback:\n"
-    for skill in found_skills:
-        if skill in FEEDBACK:
-            summary += f"- {skill.title()}: {FEEDBACK[skill]}\n"
-    missing = [s for s in IMPORTANT_SKILLS if s not in found_skills]
-    if missing:
-        summary += "\nConsider adding or highlighting these important skills:\n"
-        summary += ", ".join(missing) + "\n"
-    summary += "\n--- Extracted Resume Text Preview ---\n"
-    summary += text[:2000] + ("..." if len(text) > 2000 else "")
-    return summary
+def generate_wordcloud(text):
+    wc = WordCloud(width=800, height=300, background_color='black', colormap='Blues').generate(text)
+    plt.imshow(wc, interpolation='bilinear')
+    plt.axis("off")
+    st.pyplot(plt)
 
-st.set_page_config(page_title="Advanced Resume Scanner", layout="wide")
+def smart_suggestions(category):
+    suggestions = {
+        "Data Scientist": "NumPy, Pandas, Deep Learning",
+        "Software Engineer": "Git, REST APIs, Docker",
+        "DevOps": "Jenkins, CI/CD, Docker",
+        "Product Manager": "Agile, Roadmapping, User Stories",
+        "AI Engineer": "TensorFlow, PyTorch, NLP"
+    }
+    return suggestions.get(category, "Keep enhancing your skills!")
 
-dark_mode = st.sidebar.checkbox("Enable Dark Mode", False)
+if resumes:
+    for file in resumes:
+        text = extract_text(file)
+        cleaned = clean_resume(text)
+        st.subheader(f"📄 {file.name}")
 
-if dark_mode:
-    # Inject some CSS for dark mode background & text
-    st.markdown(
-        """
-        <style>
-        .main {
-            background-color: #0e1117;
-            color: #d7dadc;
-        }
-        .css-1d391kg {
-            background-color: #0e1117;
-        }
-        </style>
-        """, unsafe_allow_html=True)
+        # Extract and display sections
+        sections = extract_sections(cleaned)
+        st.write("### Extracted Sections:")
+        for sec, content in sections.items():
+            st.write(f"**{sec}**: {content[:300]}...")
 
-st.title("Advanced Resume Scanner")
+        # Grammar analysis
+        err_count, err_list = analyze_grammar(cleaned)
+        st.write(f"**Grammar Issues Detected:** {err_count}")
 
-uploaded_file = st.file_uploader("Upload your resume (PDF or DOCX)", type=["pdf", "docx"])
+        # WordCloud visualization
+        st.write("### Skills WordCloud")
+        generate_wordcloud(cleaned)
 
-if uploaded_file:
-    text = extract_text(uploaded_file)
-    if text:
-        col1, col2 = st.columns([3, 2])
+        # Resume matching score if job description given
+        if job_desc:
+            score = resume_match_score(cleaned, job_desc)
+            st.write(f"### Resume-Job Match Score: {score}%")
+        else:
+            score = None
 
-        with col1:
-            st.subheader("Extracted Resume Text (Preview)")
-            st.write(text[:3000] + "..." if len(text) > 3000 else text)
+        # ML-based category prediction
+        vector_input = vectorizer.transform([cleaned])
+        predicted_category = model.predict(vector_input)[0]
+        st.write(f"**Predicted Category (ML Model):** {predicted_category}")
 
-            st.subheader("Keyword Frequency")
-            common_words = keyword_counts(text)
-            words = [w for w, c in common_words]
-            counts = [c for w, c in common_words]
-
-            fig, ax = plt.subplots(figsize=(7, 4))
-            ax.barh(words[::-1], counts[::-1], color='dodgerblue' if not dark_mode else '#1f77b4')
-            ax.set_xlabel("Frequency")
-            ax.set_title("Top 20 Keywords")
-            st.pyplot(fig)
-
-        with col2:
-            st.subheader("Detected Skills")
-            found_skills = extract_skills(text)
-            if found_skills:
-                st.write(", ".join(found_skills))
-            else:
-                st.write("No predefined skills found.")
-
-            st.subheader("Resume Score")
-            score = calculate_score(found_skills)
-            st.progress(score / 100)
-            st.write(f"Your resume score based on key skills is **{score}%**")
-
-            st.subheader("Feedback and Suggestions")
-            for skill in found_skills:
-                if skill in FEEDBACK:
-                    st.write(f"**{skill.title()}**: {FEEDBACK[skill]}")
-
-            missing_skills = [s for s in IMPORTANT_SKILLS if s not in found_skills]
-            if missing_skills:
-                st.warning(f"Consider adding or emphasizing these important skills: {', '.join(missing_skills)}")
-
-            st.subheader("Resume Word Cloud")
-            wc = generate_wordcloud(text, dark_mode)
-            fig_wc, ax_wc = plt.subplots(figsize=(6,3))
-            ax_wc.imshow(wc, interpolation='bilinear')
-            ax_wc.axis("off")
-            st.pyplot(fig_wc)
-
-            # Download summary report
-            summary_text = create_summary(text, found_skills, score)
-            st.download_button("Download Resume Summary Report", summary_text, file_name="resume_summary.txt")
-
-    else:
-        st.error("Unsupported file type. Please upload PDF or DOCX resumes only.")
-else:
-    st.info("Please upload a resume file to get started.")
+        # Smart skill suggestions
+        st.write(f"**Suggested Skills to Improve:** {smart_suggestions(predicted_category)}")
