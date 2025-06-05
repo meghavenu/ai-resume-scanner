@@ -10,16 +10,16 @@ import spacy
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import TfidfVectorizer
 from streamlit_lottie import st_lottie
-import numpy as np
+import plotly.express as px
+import pandas as pd
+import plotly.graph_objects as go
 
-st.set_page_config(page_title="AI Resume Scanner", layout="wide", page_icon="📄")
+st.set_page_config(page_title="AI Resume Scanner", layout="wide")
 
-# Load ML models and NLP
 model = pickle.load(open("resume_model.pkl", "rb"))
 vectorizer = pickle.load(open("vectorizer.pkl", "rb"))
 nlp = spacy.load("en_core_web_sm")
 
-# Load Lottie animation from URL
 def load_lottie_url(url):
     r = requests.get(url)
     if r.status_code != 200:
@@ -28,22 +28,19 @@ def load_lottie_url(url):
 
 scan_lottie = load_lottie_url("https://assets4.lottiefiles.com/packages/lf20_u8o7BL.json")
 
-# Sidebar
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/4712/4712027.png", width=100)
     st.title("Resume Scanner Pro")
     st.markdown("🔍 Upload resumes & get AI-powered feedback.")
     st.markdown("---")
     st.info("Built with 💼 ML, 🧠 NLP, and 🎨 Lottie")
-    st.markdown("[Contact: LinkedIn](https://linkedin.com)")
+    st.markdown("Contact: [LinkedIn](https://linkedin.com)")
 
-# Dark theme styles
 st.markdown("""
     <style>
     .main {
         background-color: #0e1117;
         color: white;
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
     h1, h2, h3, h4 {
         color: #57c1eb;
@@ -51,14 +48,9 @@ st.markdown("""
     .st-bb {
         background-color: #0e1117;
     }
-    textarea, .stTextArea>div>div>textarea {
-        background-color: #1e242c;
-        color: white;
-    }
     </style>
     """, unsafe_allow_html=True)
 
-# Header with animation & title
 col1, col2 = st.columns([1, 2])
 with col1:
     st_lottie(scan_lottie, height=200)
@@ -66,19 +58,13 @@ with col2:
     st.title("AI Resume Scanner")
     st.write("Get instant feedback, job category prediction, resume score, and improvement tips.")
 
-# Upload resumes and job description input
 resumes = st.file_uploader("Upload Resume(s)", type=["pdf", "docx"], accept_multiple_files=True)
 job_desc = st.text_area("Paste Job Description (Optional)")
 
-# Text extraction functions
 def extract_text(file):
     if file.type == "application/pdf":
         reader = PyPDF2.PdfReader(file)
-        text = ""
-        for page in reader.pages:
-            if page.extract_text():
-                text += page.extract_text() + " "
-        return text
+        return " ".join([page.extract_text() for page in reader.pages])
     elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
         return docx2txt.process(file)
     return ""
@@ -86,110 +72,73 @@ def extract_text(file):
 def clean_text(text):
     return re.sub(r'[^A-Za-z0-9., ]+', ' ', text)
 
-# Extract sections by header keywords
 def extract_sections(text):
     headers = ["Education", "Experience", "Projects", "Skills", "Certifications", "Achievements"]
     sections = {}
     for h in headers:
-        regex = re.compile(rf"{h}[:\n](.*?)(?=\n[A-Z][a-z]+:|\Z)", re.DOTALL | re.IGNORECASE)
-        match = regex.search(text)
+        match = re.search(h + r'[:\n][\s\S]{0,500}', text, re.IGNORECASE)
         if match:
-            sections[h] = match.group(1).strip()
-        else:
-            sections[h] = "Not found"
+            sections[h] = match.group()
     return sections
 
-# Generate word cloud plot
 def generate_wordcloud(text):
-    wc = WordCloud(background_color="#0e1117", colormap="Blues", width=400, height=200).generate(text)
-    plt.figure(figsize=(8,4))
-    plt.imshow(wc, interpolation="bilinear")
-    plt.axis("off")
-    st.pyplot(plt)
+    wc = WordCloud(width=800, height=400, background_color='black').generate(text)
+    st.image(wc.to_array())
 
-# Pie chart for section word counts
-def plot_section_pie(sections):
-    counts = {k: len(v.split()) if v != "Not found" else 0 for k, v in sections.items()}
-    labels = list(counts.keys())
-    sizes = list(counts.values())
-    colors = plt.cm.Paired(np.linspace(0, 1, len(labels)))
-    fig, ax = plt.subplots()
-    ax.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%', startangle=140)
-    ax.axis('equal')
-    st.pyplot(fig)
-
-# Compute resume score (dummy function - adjust with your logic)
-def compute_resume_score(text):
-    score = min(100, len(text) // 10)
-    return score
-
-# AI job role prediction
-def predict_job_role(text):
-    X = vectorizer.transform([text])
-    pred = model.predict(X)
-    return pred[0]
-
-# Similarity with job description
-def compute_match_score(resume_text, job_desc_text):
-    if not job_desc_text.strip():
-        return None
-    docs = [resume_text, job_desc_text]
-    tfidf = TfidfVectorizer().fit_transform(docs)
-    similarity = cosine_similarity(tfidf[0:1], tfidf[1:2])[0][0]
-    return round(similarity * 100, 2)
-
-# Strengths and improvements (dummy example)
-def analyze_strengths_improvements(text):
-    strengths = []
-    improvements = []
-    if "lead" in text.lower():
-        strengths.append("Leadership mentioned")
-    else:
-        improvements.append("Add leadership experience if applicable")
-    if "python" in text.lower():
-        strengths.append("Python skill detected")
-    else:
-        improvements.append("Mention relevant technical skills")
-    return strengths, improvements
-
-# Process resumes
 if resumes:
+    results = []
     for file in resumes:
-        st.markdown(f"### Analyzing: {file.name}")
-        text = extract_text(file)
-        cleaned = clean_text(text)
-        sections = extract_sections(text)
+        raw_text = extract_text(file)
+        cleaned = clean_text(raw_text)
+        sections = extract_sections(cleaned)
+        tokens = vectorizer.transform([cleaned])
+        role = model.predict(tokens)[0]
+        match_score = 0
+        if job_desc:
+            tfidf = TfidfVectorizer().fit_transform([cleaned, job_desc])
+            match_score = round(cosine_similarity(tfidf[0:1], tfidf[1:2])[0][0] * 100, 2)
+        score = match_score + len(sections) * 10 + len(cleaned.split()) / 100
+        results.append({
+            "Name": file.name,
+            "Role": role,
+            "JD Match %": match_score,
+            "Word Count": len(cleaned.split()),
+            "Sections": sections,
+            "Total Score": round(score, 2)
+        })
+        st.subheader(f"📄 Resume: {file.name}")
+        st.write(f"**Predicted Role:** {role}")
+        st.write(f"**Job Match Score:** {match_score}%")
+        st.write(f"**Total Resume Score:** {round(score, 2)}")
+        st.write("**Sections Found:**", list(sections.keys()))
+        st.subheader("Word Cloud")
+        generate_wordcloud(cleaned)
 
-        col1, col2 = st.columns(2)
-        with col1:
-            st.subheader("Section-wise Analysis")
-            for sec, content in sections.items():
-                st.markdown(f"**{sec}:**")
-                st.write(content[:300] + ("..." if len(content) > 300 else ""))
-        with col2:
-            st.subheader("Visual Insights")
-            generate_wordcloud(cleaned)
-            plot_section_pie(sections)
+    df = pd.DataFrame(results)
+    st.subheader("📋 Resume Comparison Table")
+    st.dataframe(df.drop(columns=["Sections"]))
 
-        st.subheader("AI Insights")
-        job_role = predict_job_role(cleaned)
-        st.markdown(f"**Predicted Job Role:** {job_role}")
+    st.subheader("📌 JD Match % Distribution")
+    fig1 = px.pie(df, names="Name", values="JD Match %", title="Resume vs Job Description Match")
+    st.plotly_chart(fig1, use_container_width=True)
 
-        score = compute_resume_score(cleaned)
-        st.markdown(f"**Resume Score:** {score} / 100")
+    st.subheader("📊 Total Resume Scores")
+    fig2 = px.bar(df, x="Name", y="Total Score", color="Name", text="Total Score", title="Overall Resume Score Comparison")
+    fig2.update_layout(xaxis_title="Resume", yaxis_title="Score", plot_bgcolor="#0e1117", paper_bgcolor="#0e1117", font_color="white")
+    st.plotly_chart(fig2, use_container_width=True)
 
-        if job_desc.strip():
-            match_score = compute_match_score(cleaned, job_desc)
-            st.markdown(f"**Match Score with Job Description:** {match_score}%")
-
-        strengths, improvements = analyze_strengths_improvements(cleaned)
-        st.markdown("**Strengths:**")
-        for s in strengths:
-            st.success(s)
-        st.markdown("**Areas for Improvement:**")
-        for imp in improvements:
-            st.warning(imp)
-
-        st.markdown("---")
-else:
-    st.info("Upload one or more resumes to start the analysis.")
+    st.subheader("📈 Resume Section Analysis (Radar)")
+    categories = list(df["Sections"].iloc[0].keys())
+    fig3 = go.Figure()
+    for i in range(len(df)):
+        sec_data = df["Sections"].iloc[i]
+        values = [len(sec_data.get(cat, "")) for cat in categories]
+        values += values[:1]
+        fig3.add_trace(go.Scatterpolar(
+            r=values,
+            theta=categories + [categories[0]],
+            fill='toself',
+            name=df["Name"][i]
+        ))
+    fig3.update_layout(polar=dict(bgcolor="#0e1117"), showlegend=True, paper_bgcolor="#0e1117", font_color="white")
+    st.plotly_chart(fig3, use_container_width=True)
