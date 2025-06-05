@@ -7,12 +7,10 @@ import re
 import pickle
 import requests
 import spacy
+import pandas as pd
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import TfidfVectorizer
 from streamlit_lottie import st_lottie
-import plotly.express as px
-import pandas as pd
-import plotly.graph_objects as go
 
 st.set_page_config(page_title="AI Resume Scanner", layout="wide")
 
@@ -64,7 +62,7 @@ job_desc = st.text_area("Paste Job Description (Optional)")
 def extract_text(file):
     if file.type == "application/pdf":
         reader = PyPDF2.PdfReader(file)
-        return " ".join([page.extract_text() for page in reader.pages])
+        return " ".join([page.extract_text() for page in reader.pages if page.extract_text()])
     elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
         return docx2txt.process(file)
     return ""
@@ -81,64 +79,73 @@ def extract_sections(text):
             sections[h] = match.group()
     return sections
 
+def match_score(resume_text, jd_text):
+    documents = [resume_text, jd_text]
+    tfidf = TfidfVectorizer()
+    matrix = tfidf.fit_transform(documents)
+    score = cosine_similarity(matrix[0:1], matrix[1:2])[0][0]
+    return round(score * 100, 2)
+
 def generate_wordcloud(text):
-    wc = WordCloud(width=800, height=400, background_color='black').generate(text)
-    st.image(wc.to_array())
+    wc = WordCloud(width=800, height=400, background_color='black', colormap='viridis').generate(text)
+    fig, ax = plt.subplots()
+    ax.imshow(wc, interpolation='bilinear')
+    ax.axis("off")
+    st.pyplot(fig)
 
 if resumes:
-    results = []
-    for file in resumes:
-        raw_text = extract_text(file)
-        cleaned = clean_text(raw_text)
+    for resume in resumes:
+        st.markdown("----")
+        st.header(f"📄 {resume.name}")
+        text = extract_text(resume)
+        cleaned = clean_text(text)
         sections = extract_sections(cleaned)
-        tokens = vectorizer.transform([cleaned])
-        role = model.predict(tokens)[0]
-        match_score = 0
-        if job_desc:
-            tfidf = TfidfVectorizer().fit_transform([cleaned, job_desc])
-            match_score = round(cosine_similarity(tfidf[0:1], tfidf[1:2])[0][0] * 100, 2)
-        score = match_score + len(sections) * 10 + len(cleaned.split()) / 100
-        results.append({
-            "Name": file.name,
-            "Role": role,
-            "JD Match %": match_score,
-            "Word Count": len(cleaned.split()),
-            "Sections": sections,
-            "Total Score": round(score, 2)
+        predicted_role = model.predict(vectorizer.transform([cleaned]))[0]
+        score = match_score(cleaned, job_desc) if job_desc else 0
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("📌 Predicted Job Role")
+            st.success(predicted_role)
+
+            st.subheader("📊 JD Match Score")
+            st.info(f"{score}% match")
+
+            st.subheader("🧠 Resume Sections")
+            for k in sections:
+                st.markdown(f"- **{k}**")
+
+        with col2:
+            st.subheader("☁️ Word Cloud")
+            generate_wordcloud(cleaned)
+
+            st.subheader("🎯 Resume Length")
+            st.write(f"{len(cleaned.split())} words")
+
+# Resume Comparison Section
+if len(resumes) >= 2:
+    st.markdown("----")
+    st.subheader("📊 Resume Comparison")
+    comparison_data = []
+
+    for resume in resumes:
+        text = extract_text(resume)
+        cleaned = clean_text(text)
+        sections = extract_sections(cleaned)
+        predicted_role = model.predict(vectorizer.transform([cleaned]))[0]
+        score = match_score(cleaned, job_desc) if job_desc else 0
+        total_score = score + len(sections) * 10 + len(cleaned.split()) / 10
+
+        comparison_data.append({
+            "Name": resume.name,
+            "Predicted Role": predicted_role,
+            "Length (words)": len(cleaned.split()),
+            "JD Match (%)": score,
+            "Sections": len(sections),
+            "Total Score": round(total_score, 2)
         })
-        st.subheader(f"📄 Resume: {file.name}")
-        st.write(f"**Predicted Role:** {role}")
-        st.write(f"**Job Match Score:** {match_score}%")
-        st.write(f"**Total Resume Score:** {round(score, 2)}")
-        st.write("**Sections Found:**", list(sections.keys()))
-        st.subheader("Word Cloud")
-        generate_wordcloud(cleaned)
 
-    df = pd.DataFrame(results)
-    st.subheader("📋 Resume Comparison Table")
-    st.dataframe(df.drop(columns=["Sections"]))
-
-    st.subheader("📌 JD Match % Distribution")
-    fig1 = px.pie(df, names="Name", values="JD Match %", title="Resume vs Job Description Match")
-    st.plotly_chart(fig1, use_container_width=True)
-
-    st.subheader("📊 Total Resume Scores")
-    fig2 = px.bar(df, x="Name", y="Total Score", color="Name", text="Total Score", title="Overall Resume Score Comparison")
-    fig2.update_layout(xaxis_title="Resume", yaxis_title="Score", plot_bgcolor="#0e1117", paper_bgcolor="#0e1117", font_color="white")
-    st.plotly_chart(fig2, use_container_width=True)
-
-    st.subheader("📈 Resume Section Analysis (Radar)")
-    categories = list(df["Sections"].iloc[0].keys())
-    fig3 = go.Figure()
-    for i in range(len(df)):
-        sec_data = df["Sections"].iloc[i]
-        values = [len(sec_data.get(cat, "")) for cat in categories]
-        values += values[:1]
-        fig3.add_trace(go.Scatterpolar(
-            r=values,
-            theta=categories + [categories[0]],
-            fill='toself',
-            name=df["Name"][i]
-        ))
-    fig3.update_layout(polar=dict(bgcolor="#0e1117"), showlegend=True, paper_bgcolor="#0e1117", font_color="white")
-    st.plotly_chart(fig3, use_container_width=True)
+    df = pd.DataFrame(comparison_data).sort_values("Total Score", ascending=False).reset_index(drop=True)
+    st.dataframe(df.style.highlight_max(axis=0, color='lightgreen'))
+    best_resume = df.iloc[0]["Name"]
+    st.success(f"🏆 **Best Resume:** `{best_resume}` based on combined score of content, JD match, and structure.")
