@@ -17,10 +17,12 @@ An AI-powered web application that scans resumes and predicts the most suitable 
 
 - Python  
 - Scikit-learn  
-- Pandas  
+- Pandas ,Matlotlib,Seaborn
 - Streamlit  
 - joblib  
-- docx2txt  
+- docx2txt
+- Logistic Regression
+  
 
 ---
 
