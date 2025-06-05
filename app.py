@@ -8,6 +8,8 @@ import pandas as pd
 import numpy as np
 from sklearn.preprocessing import LabelEncoder
 
+st.set_page_config(page_title="AI Resume Scanner", layout="wide")
+
 # Load ML models and vectorizer
 model = pickle.load(open("resume_model.pkl", "rb"))
 vectorizer = pickle.load(open("vectorizer.pkl", "rb"))
@@ -35,8 +37,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.set_page_config(page_title="AI Resume Scanner", layout="wide")
-
 st.title("AI Resume Scanner")
 
 uploaded_file = st.file_uploader("Upload your resume (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"])
@@ -58,7 +58,7 @@ def extract_text_from_file(file):
 
 def preprocess_text(text):
     text = text.lower()
-    text = re.sub(r'\s+', ' ', text)  # Remove extra spaces/newlines
+    text = re.sub(r'\s+', ' ', text)
     return text
 
 def predict_category(text):
@@ -68,7 +68,6 @@ def predict_category(text):
 
 def extract_skills(text):
     skills = []
-    # Basic skill keywords - can be extended
     skillset = ['python', 'java', 'c++', 'machine learning', 'deep learning', 'sql', 'excel', 
                 'communication', 'teamwork', 'problem solving', 'nlp', 'tensorflow', 'keras',
                 'pandas', 'numpy', 'scikit-learn', 'html', 'css', 'javascript', 'react', 'django']
@@ -104,8 +103,5 @@ if uploaded_file is not None:
     
     st.subheader("Word Cloud of Resume")
     generate_wordcloud(clean_text)
-    
-    # Additional analytics or visualizations can be added here
-
 else:
     st.info("Please upload a resume file to get started.")
