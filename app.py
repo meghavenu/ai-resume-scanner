@@ -16,8 +16,8 @@ from streamlit_lottie import st_lottie
 st.set_page_config(page_title="AI Resume Scanner Pro", layout="wide")
 
 # Load models & NLP
-model = pickle.load(open("resume_model.pkl", "rb"))        # Your trained job role classifier
-vectorizer = pickle.load(open("vectorizer.pkl", "rb"))    # Your TF-IDF vectorizer
+model = pickle.load(open("resume_model.pkl", "rb"))        
+vectorizer = pickle.load(open("vectorizer.pkl", "rb"))    
 nlp = spacy.load("en_core_web_sm")
 
 def load_lottie_url(url):
@@ -55,15 +55,15 @@ h1, h2, h3 {
 # Sidebar
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/4712/4712027.png", width=100)
-    st.title("Resume Scanner Pro")
+    st.title("AI Resume Scanner ")
     st.markdown("Upload your resumes and job description to get tailored AI-powered insights.")
     st.markdown("---")
-    st.info("Powered by Machine Learning, NLP, and Beautiful Visuals")
-    st.markdown("Contact: [LinkedIn](https://linkedin.com)")
+    
 
 st_lottie(lottie_animation, height=180, key="resume_animation")
 
-st.title("📋 AI Resume Scanner")
+st.title("📋 HireMatch")
+st.markdown("Smart screening starts here!")
 
 uploaded_files = st.file_uploader("Upload Resume(s) (PDF/DOCX)", type=["pdf", "docx"], accept_multiple_files=True)
 job_description = st.text_area("Paste Job Description (optional)", height=150)
@@ -106,7 +106,7 @@ def extract_skills(text):
     # Simplified skills extraction using a keyword list - ideally use a better method or external API
     skills_keywords = [
         'python', 'java', 'c++', 'sql', 'machine learning', 'deep learning', 'nlp', 'data analysis', 'excel',
-        'power bi', 'tableau', 'communication', 'teamwork', 'project management', 'leadership'
+        'power bi', 'tableau', 'communication', 'teamwork', 'project management', 'leadership','time management','web develoment','git'
     ]
     text_lower = text.lower()
     found_skills = [skill for skill in skills_keywords if skill in text_lower]
@@ -139,7 +139,7 @@ def generate_suggestions(sections, skills, jd_text):
     if "Experience" not in sections:
         suggestions.append("Consider adding detailed professional Experience to highlight your work history.")
     else:
-        suggestions.append("Your Experience section is informative.")
+        suggestions.append("Your Experience section is informative.Try highlighting key points.")
 
     if "Skills" not in sections or len(skills) < 3:
         suggestions.append("Expand your Skills section with relevant technical and soft skills.")
