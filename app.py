@@ -64,6 +64,9 @@ st_lottie(lottie_animation, height=180, key="resume_animation")
 
 st.title("📋 HireMatch")
 st.markdown("Smart screening starts here!")
+st.markdown("---")
+st.markdown("At Hiremath, we scan, analyze, and match resumes using smart AI—so you don’t have to. We break down skills, compare them with job roles, and rank candidates based on fit. Just upload your resumes, and let Hiremath do the heavy lifting. Fast, accurate, and hassle-free hiring starts here.
+")
 
 uploaded_files = st.file_uploader("Upload Resume(s) (PDF/DOCX)", type=["pdf", "docx"], accept_multiple_files=True)
 job_description = st.text_area("Paste Job Description (optional)", height=150)
