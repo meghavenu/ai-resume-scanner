@@ -32,3 +32,7 @@ An AI-powered web application that scans resumes and predicts the most suitable 
 ├── vectorizer.pkl # TF-IDF vectorizer
 ├── requirements.txt # List of dependencies
 └── README.md # This file
+
+## 🚀 Live Demo
+
+Check out the live Streamlit app: [Click here to view](https://ai-resume-scanner-tqwywqrd3uuadclvqs2j3e.streamlit.app/)
