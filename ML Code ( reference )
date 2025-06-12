@@ -1,0 +1,54 @@
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+import nltk
+import pickle
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import classification_report, accuracy_score, mean_squared_error
+
+df = pd.read_csv("ResumeDataSet.csv")
+
+print(df.head())
+print(df['Category'].value_counts())
+
+sns.countplot(data=df, x='Category')
+plt.xticks(rotation=45)
+plt.title('Resume Category Distribution')
+plt.show()
+
+nltk.download('stopwords')
+from nltk.corpus import stopwords
+stop_words = set(stopwords.words('english'))
+
+def clean_text(text):
+    words = text.lower().split()
+    words = [w for w in words if w not in stop_words]
+    return ' '.join(words)
+
+df['Cleaned_Resume'] = df['Resume'].apply(clean_text)
+
+vectorizer = TfidfVectorizer(max_features=3000)
+X = vectorizer.fit_transform(df['Cleaned_Resume']).toarray()
+y = df['Category']
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+model = LogisticRegression()
+model.fit(X_train, y_train)
+
+y_pred = model.predict(X_test)
+print("Accuracy:", accuracy_score(y_test, y_pred))
+print("MSE:", mean_squared_error(pd.factorize(y_test)[0], pd.factorize(y_pred)[0]))
+print("Classification Report:\n", classification_report(y_test, y_pred))
+
+
+pickle.dump(model, open("resume_model.pkl", "wb"))
+pickle.dump(vectorizer, open("vectorizer.pkl", "wb"))
+
+
+from google.colab import files
+files.download("resume_model.pkl")
+files.download("vectorizer.pkl")
