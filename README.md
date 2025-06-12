@@ -26,6 +26,10 @@ An AI-powered web application that scans resumes and predicts the most suitable 
 
 ---
 
+## 📂 Dataset
+
+The dataset used in this project is available on Kaggle: 🔗 [Click here to view on Kaggle](https://www.kaggle.com/datasets/gauravduttakiit/resume-dataset)
+
 ## 📂 Project Structure
 ├── app.py # Streamlit frontend app
 ├── model.pkl # Trained logistic regression model
